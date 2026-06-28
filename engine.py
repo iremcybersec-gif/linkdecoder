@@ -34,8 +34,11 @@ def follow_redirects(url, max_hops=10):
 
 
 def check_redirects(chain):
-    hops = len(chain) - 1
-    if hops == 0:
+    hops = max(0, len(chain) - 1)
+    if not chain:
+        status, sev = "warn", "low"
+        detail = "Could not resolve the URL — destination unreachable."
+    elif hops == 0:
         status, sev = "pass", "none"
         detail = "No redirects — link goes straight to its destination."
     elif hops <= 1:
@@ -120,8 +123,8 @@ def check_domain_age(final_url):
                 "data": {"age_days": age_days, "created": str(created)}}
     except Exception as e:
         return {"id": "domain_age", "name": "Domain Age",
-                "status": "warn", "severity": "low",
-                "detail": "Could not determine domain age (WHOIS lookup failed).",
+                "status": "warn", "severity": "medium",
+                "detail": "Domain age could not be verified — it may be unregistered or brand-new, both common in scams.",
                 "data": {"age_days": None, "error": str(e)}}
 
 
