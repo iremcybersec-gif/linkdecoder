@@ -22,7 +22,6 @@ import socket
 import requests
 import tldextract
 import Levenshtein
-import concurrent.futures
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse   # ← FIX 1: replaces requests.compat.urljoin
 
@@ -160,9 +159,9 @@ def check_typosquat(final_url: str):
     elif best_brand and best_dist <= 2:
         status, sev = "fail", "high"
         detail = f"Domain closely mimics '{best_brand}' (Nigerian brand). High phishing risk."
-    elif best_brand and best_dist == 3:
-        status, sev = "warn", "low"
-        detail = f"Domain slightly resembles '{best_brand}' — could be coincidental."
+    elif best_brand and best_dist <= 4:
+        status, sev = "warn", "medium"
+        detail = f"Domain loosely resembles '{best_brand}'. Treat with caution."
     else:
         status, sev = "pass", "none"
         detail = "No brand impersonation detected."
@@ -184,13 +183,7 @@ def check_domain_age(final_url: str):
     try:
         ext = tldextract.extract(final_url)
         domain = f"{ext.domain}.{ext.suffix}"
-        # Timeout the WHOIS call — it hangs forever on some domains/subdomains
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(_whois_lib.whois, domain)
-            try:
-                w = future.result(timeout=12)
-            except concurrent.futures.TimeoutError:
-                raise ValueError("WHOIS lookup timed out after 6s")
+        w = _whois_lib.whois(domain)
         created = w.creation_date
         if isinstance(created, list):
             created = created[0]
@@ -219,11 +212,10 @@ def check_domain_age(final_url: str):
             "data": {"age_days": age_days, "created": str(created)},
         }
     except Exception as e:
-        # severity "none" = 0 points, so a timeout does not inflate the risk score
         return {
             "id": "domain_age", "name": "Domain Age",
-            "status": "warn", "severity": "none",
-            "detail": "Domain age could not be verified — WHOIS lookup failed or timed out.",
+            "status": "warn", "severity": "medium",
+            "detail": "Domain age could not be verified — may be unregistered or brand-new.",
             "data": {"age_days": None, "error": str(e)},
         }
 
@@ -296,12 +288,12 @@ def check_ip_hostname(final_url: str):
 def aggregate(checks):
     score = min(100, sum(SEVERITY_WEIGHTS[c["severity"]] for c in checks))
     if score >= 60:
-        verdict = "dangerous"
+        verdict = "HIGH_RISK"
     elif score >= 25:
-        verdict = "suspicious"
+        verdict = "MEDIUM_RISK"
     else:
-        verdict = "safe"
-    return score, verdict
+        verdict = "SAFE"
+    return str(score), verdict   # score returned as string per API contract
 
 
 # ── MAIN SCAN FUNCTION ────────────────────────────────────────────────────────
